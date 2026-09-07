@@ -14,14 +14,34 @@
     ],
     "beforeSubmitPrompt": [
       {
-        "hooks": [
-          {
-            "name": "keyword-detector",
-            "type": "command",
-            "command": "\"/Users/gracefullight/.local/share/mise/installs/bun/1.3.11/bin/bun\" .cursor/hooks/keyword-detector.ts",
-            "timeout": 5
-          }
-        ]
+        "command": "'.cursor/hooks/oma-hook.sh' --vendor 'cursor' --event 'beforeSubmitPrompt'",
+        "timeout": 21
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "'.cursor/hooks/oma-hook.sh' --vendor 'cursor' --event 'preToolUse' --matcher 'Shell'",
+        "timeout": 13,
+        "matcher": "Shell"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "'.cursor/hooks/oma-hook.sh' --vendor 'cursor' --event 'afterFileEdit'",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "command": "'.cursor/hooks/oma-hook.sh' --vendor 'cursor' --event 'stop'",
+        "timeout": 15,
+        "loop_limit": null
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "'.cursor/hooks/oma-hook.sh' --vendor 'cursor' --event 'sessionStart'",
+        "timeout": 13
       }
     ]
   },

@@ -4,10 +4,10 @@
       {
         "hooks": [
           {
-            "name": "keyword-detector",
+            "name": "oma-hook-UserPromptSubmit",
             "type": "command",
-            "command": "\"/Users/gracefullight/.local/share/mise/installs/bun/1.3.11/bin/bun\" .codex/hooks/keyword-detector.ts",
-            "timeout": 5
+            "command": "'.codex/hooks/oma-hook.sh' --vendor 'codex' --event 'UserPromptSubmit'",
+            "timeout": 21
           }
         ]
       }
@@ -16,10 +16,10 @@
       {
         "hooks": [
           {
-            "name": "persistent-mode",
+            "name": "oma-hook-Stop",
             "type": "command",
-            "command": "\"/Users/gracefullight/.local/share/mise/installs/bun/1.3.11/bin/bun\" .codex/hooks/persistent-mode.ts",
-            "timeout": 5
+            "command": "'.codex/hooks/oma-hook.sh' --vendor 'codex' --event 'Stop'",
+            "timeout": 15
           }
         ]
       }
@@ -28,13 +28,26 @@
       {
         "hooks": [
           {
-            "name": "test-filter",
+            "name": "oma-hook-PreToolUse",
             "type": "command",
-            "command": "\"/Users/gracefullight/.local/share/mise/installs/bun/1.3.11/bin/bun\" .codex/hooks/test-filter.ts",
-            "timeout": 5
+            "command": "'.codex/hooks/oma-hook.sh' --vendor 'codex' --event 'PreToolUse' --matcher 'Bash'",
+            "timeout": 13
           }
         ],
         "matcher": "Bash"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "name": "oma-hook-PostToolUse",
+            "type": "command",
+            "command": "'.codex/hooks/oma-hook.sh' --vendor 'codex' --event 'PostToolUse' --matcher 'apply_patch|Edit|Write'",
+            "timeout": 10
+          }
+        ],
+        "matcher": "apply_patch|Edit|Write"
       }
     ]
   }

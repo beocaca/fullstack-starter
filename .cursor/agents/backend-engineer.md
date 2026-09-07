@@ -1,7 +1,6 @@
 ---
 name: backend-engineer
 description: Backend implementation. Use for API, authentication, DB migration work.
-tools: []
 model: inherit
 skills:
   - oma-backend
@@ -19,6 +18,8 @@ Follow `.agents/skills/_shared/core/quality-principles.md`:
 - Write results to project root `.agents/results/result-backend.md` (orchestrated: `result-backend-{sessionId}.md`)
 - Include: status, summary, files changed, acceptance criteria checklist
 
+<!-- CHARTER_CHECK_BEGIN -->
+
 ## Charter Preflight (MANDATORY)
 
 Before ANY code changes, output this block:
@@ -35,6 +36,7 @@ CHARTER_CHECK:
 - LOW: proceed with assumptions
 - MEDIUM: list options, proceed with most likely
 - HIGH: set status blocked, list questions, DO NOT write code
+<!-- CHARTER_CHECK_END -->
 
 ## Architecture
 
@@ -43,12 +45,13 @@ Router (HTTP) → Service (Business Logic) → Repository (Data Access) → Mode
 ## Rules
 
 1. Stay in scope — only work on assigned backend tasks
-2. Write tests for all new code
+2. Write tests for all new code; honor the plan task's `test_approach` — for `tdd`, demonstrate RED before the change and record a `TDD_EVIDENCE` block (test command, RED, GREEN) in the result file
 3. Follow Repository → Service → Router pattern (no business logic in routes)
 4. Validate all inputs with the project's validation library
 5. Parameterized queries only (no string interpolation in SQL)
-6. JWT + bcrypt for auth
+6. JWT + Argon2id for auth (bcrypt acceptable for legacy compatibility)
 7. Async/await consistently
 8. Custom exceptions via centralized error module
-9. Document out-of-scope dependencies for other agents
-10. Never modify `.agents/` files
+9. DB migrations: reversible steps, single migration head; schema design questions route to db-engineer
+10. Document out-of-scope dependencies for other agents
+11. Never modify `.agents/` files (SSOT) — run outputs under `.agents/results/` and `.agents/state/memories/` are the only exceptions

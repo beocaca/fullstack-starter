@@ -4,39 +4,23 @@ When running as a CLI subagent, follow this protocol for shared state coordinati
 
 ## State Management
 
-Use file-based I/O for coordination. Write results to `.agents/results/`.
+Use native file tools for coordination notes under `.agents/state/memories/` at the project root. Human-facing reports may live under `.agents/results/`. Completion follows [the shared result contract](../result-contract.md); neither location alone proves completion.
 
-If Serena MCP is available, you may also use `read_memory`/`write_memory`/`edit_memory`.
+Write and read these files directly at `.agents/state/memories/` using your native file
+Read/Write/Edit tools; create the directory if it does not yet exist.
 
 ### Path Resolution (CRITICAL)
 
-All result, progress, and state files MUST be written to the **project root** `.agents/` directory — never to a subdirectory's `.agents/`.
+All result, progress, and state files MUST be written to the **project root** `.agents/state/memories/` directory, never to a subdirectory's `.agents/state/memories/`.
 
 - **Project root** = the git repository root (where `.git` exists)
 - **Session-scoped naming**: when running under an orchestration session, append session ID as suffix:
   - `result-{agent-id}-{sessionId}.md` (e.g., `result-frontend-session-20260405-100835.md`)
   - `progress-{agent-id}-{sessionId}.md`
-- **Manual (non-orchestrated) runs**: no suffix — `result-{agent-id}.md`
+- **Manual (non-orchestrated) runs**: no suffix, `result-{agent-id}.md`
 
-## On Start
+## Lifecycle and results
 
-1. Read `.agents/results/task-board.md` (or `read_memory("task-board.md")`) to confirm your assigned task
-2. Create `.agents/results/progress-{agent-id}[-{sessionId}].md` with initial status
+Follow [Execution Policy](../../core/execution-policy.md) and [Agent Result Contract](../result-contract.md). The task-specific injected run ID and result path are authoritative for this dispatch. Keep coordination notes in the project-root memory store; the structured receipt determines completion.
 
-## During Execution
-
-- Periodically update `progress-{agent-id}[-{sessionId}].md` with current state
-- Include: action taken, current status, files created/modified
-
-## On Completion
-
-- Create `.agents/results/result-{agent-id}[-{sessionId}].md` with final result including:
-  - Status: `completed` or `failed`
-  - Summary of work done
-  - Files created/modified
-  - Acceptance criteria checklist
-
-## On Failure
-
-- Still create `result-{agent-id}[-{sessionId}].md` with Status: `failed`
-- Include detailed error description and what remains incomplete
+Read an existing task board when assigned one. Report progress for long tasks. Include unresolved work even on failure. For read-only dispatch, return the injected stdout JSON contract instead of writing files.
