@@ -79,3 +79,11 @@ apps/mobile/.packages
 
 # oh-my-agent runtime state
 .agents/state/
+
+# oh-my-agent runtime (local artifacts — do not commit)
+.antigravitycli/
+.agents/results/
+.agents/backup/
+docs/plans/
+.migration-backup/
+.qwen/tmp/

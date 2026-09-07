@@ -4,10 +4,10 @@
       {
         "hooks": [
           {
-            "name": "keyword-detector",
+            "name": "oma-hook-UserPromptSubmit",
             "type": "command",
-            "command": "\"/Users/gracefullight/.local/share/mise/installs/bun/1.3.11/bin/bun\" \"$QWEN_PROJECT_DIR/.qwen/hooks/keyword-detector.ts\"",
-            "timeout": 5
+            "command": "\"$QWEN_PROJECT_DIR/.qwen/hooks/oma-hook.sh\" --vendor 'qwen' --event 'UserPromptSubmit'",
+            "timeout": 21
           }
         ]
       }
@@ -16,10 +16,10 @@
       {
         "hooks": [
           {
-            "name": "persistent-mode",
+            "name": "oma-hook-Stop",
             "type": "command",
-            "command": "\"/Users/gracefullight/.local/share/mise/installs/bun/1.3.11/bin/bun\" \"$QWEN_PROJECT_DIR/.qwen/hooks/persistent-mode.ts\"",
-            "timeout": 5
+            "command": "\"$QWEN_PROJECT_DIR/.qwen/hooks/oma-hook.sh\" --vendor 'qwen' --event 'Stop'",
+            "timeout": 15
           }
         ]
       }
@@ -28,14 +28,72 @@
       {
         "hooks": [
           {
-            "name": "test-filter",
+            "name": "oma-hook-PreToolUse",
             "type": "command",
-            "command": "\"/Users/gracefullight/.local/share/mise/installs/bun/1.3.11/bin/bun\" \"$QWEN_PROJECT_DIR/.qwen/hooks/test-filter.ts\"",
-            "timeout": 5
+            "command": "\"$QWEN_PROJECT_DIR/.qwen/hooks/oma-hook.sh\" --vendor 'qwen' --event 'PreToolUse' --matcher 'run_shell_command'",
+            "timeout": 13
           }
         ],
-        "matcher": "Bash"
+        "matcher": "run_shell_command"
       }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "name": "oma-hook-PostToolUse",
+            "type": "command",
+            "command": "\"$QWEN_PROJECT_DIR/.qwen/hooks/oma-hook.sh\" --vendor 'qwen' --event 'PostToolUse' --matcher 'write_file|replace'",
+            "timeout": 10
+          }
+        ],
+        "matcher": "write_file|replace"
+      }
+    ]
+  },
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--no-usage-statistics",
+        "--isolated"
+      ]
+    },
+    "serena": {
+      "command": "oma",
+      "args": [
+        "bridge",
+        "--context",
+        "oma"
+      ],
+      "env": {
+        "SERENA_LOG_LEVEL": "info"
+      }
+    }
+  },
+  "model": {
+    "generationConfig": {
+      "timeout": 300000
+    }
+  },
+  "privacy": {
+    "usageStatisticsEnabled": false
+  },
+  "ui": {
+    "statusLine": {
+      "type": "command",
+      "command": "'bun' \"$QWEN_PROJECT_DIR/.qwen/hooks/hud.ts\""
+    }
+  },
+  "hooksConfig": {
+    "enabled": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls *)",
+      "Bash(oma *)"
     ]
   }
 }
