@@ -1,56 +1,15 @@
 // PreToolUse hook — Filter test output to show only failures
-// Works with: Claude Code, Codex CLI, Gemini CLI, Qwen Code
+// Works with: Claude Code, Codex CLI, Qwen Code
 
-import { resolveGitRoot, makePreToolOutput, type Vendor } from "./types.ts";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-
-// --- Vendor detection (same logic as keyword-detector.ts) ---
-
-function detectVendor(input: Record<string, unknown>): Vendor {
-  const event = input.hook_event_name as string | undefined;
-  if (event === "BeforeTool") return "gemini";
-  if (event === "PreToolUse") {
-    if ("session_id" in input && !("sessionId" in input)) return "codex";
-  }
-  if (process.env.QWEN_PROJECT_DIR) return "qwen";
-  return "claude";
-}
-
-function getProjectDir(
-  vendor: Vendor,
-  input: Record<string, unknown>,
-): string {
-  let dir: string;
-  switch (vendor) {
-    case "codex":
-      dir = (input.cwd as string) || process.cwd();
-      break;
-    case "gemini":
-      dir = process.env.GEMINI_PROJECT_DIR || process.cwd();
-      break;
-    case "qwen":
-      dir = process.env.QWEN_PROJECT_DIR || process.cwd();
-      break;
-    default:
-      dir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-      break;
-  }
-  return resolveGitRoot(dir);
-}
-
-function getHookDir(vendor: Vendor): string {
-  switch (vendor) {
-    case "codex":
-      return ".codex/hooks";
-    case "gemini":
-      return ".gemini/hooks";
-    case "qwen":
-      return ".qwen/hooks";
-    default:
-      return ".claude/hooks";
-  }
-}
+import { makePreToolOutput } from "./hook-output.ts";
+import type { HandlerCtx, HandlerResult, HookInput } from "./types.ts";
+import {
+  detectVendorFromInput,
+  getHookDir,
+  getProjectDir,
+} from "./vendor-detect.ts";
 
 // --- Test runner patterns ---
 
@@ -101,46 +60,129 @@ interface PreToolUseInput {
   session_id?: string;
   sessionId?: string;
   cwd?: string;
+  // Index signature so the typed payload is accepted by the vendor-agnostic
+  // helpers detectVendor()/getProjectDir() which take Record<string, unknown>.
+  [key: string]: unknown;
 }
 
-// --- Main ---
+// ── Pure handler (canonical ABI) ─────────────────────────────
 
-const raw = await Bun.stdin.text();
-if (!raw.trim()) process.exit(0);
+/**
+ * Pure decision function — the single logic source for test-filter.
+ *
+ * Returns a `mutate` HandlerResult when a test command should be piped through
+ * the failure-filter script, or `null` when the input is not a test command /
+ * the filter script is not installed.
+ * `ctx.cwd` must be the resolved project root (see fs-utils resolveProjectRoot).
+ */
+export async function run(
+  input: HookInput,
+  ctx: HandlerCtx,
+): Promise<HandlerResult | null> {
+  if (input.kind !== "pre_tool") return null;
 
-const input: PreToolUseInput = JSON.parse(raw);
+  const { toolName, toolInput } = input;
+  const { vendor } = ctx;
+  // Filter scripts live under the project root. ctx.cwd is the resolved root
+  // even after the session cd's into a subdirectory; input.cwd is not.
+  const projectDir = ctx.cwd || input.cwd;
 
-// Gemini uses run_shell_command; Claude-family uses Bash.
-if (input.tool_name !== "Bash" && input.tool_name !== "run_shell_command") {
-  process.exit(0);
+  // Claude-family uses Bash; some CLIs use run_shell_command; Cursor names its
+  // terminal tool "Shell" (matches cursor.json's preToolUse matcher); Kiro's
+  // canonical shell tool is execute_bash (the agent-JSON matcher name).
+  if (
+    toolName !== "Bash" &&
+    toolName !== "run_shell_command" &&
+    toolName !== "Shell" &&
+    toolName !== "execute_bash"
+  )
+    return null;
+
+  const command = toolInput.command as string | undefined;
+  if (!command) return null;
+
+  // The rewrite below is Bash-only (`set -o pipefail`, subshell, pipe to
+  // bash). On Windows the host shell is PowerShell/cmd, which fails to parse
+  // it before the test runner even starts (#618). Losing the failure filter
+  // is acceptable; breaking `npm test` is not.
+  if (process.platform === "win32") return null;
+
+  // Hook re-entry guard: a command already piping through the filter script
+  // must pass through unchanged, not get wrapped a second time (#618).
+  if (command.includes("filter-test-output.sh")) return null;
+
+  const isTestCommand = TEST_PATTERNS.some((p) => p.test(command));
+  if (!isTestCommand) return null;
+
+  const isExcluded = EXCLUDE_PATTERNS.some((p) => p.test(command));
+  if (isExcluded) return null;
+
+  // Resolve the filter script: vendor hook dir first, then the opencode
+  // bridge dir (opencode has no core Vendor identity — its subprocess payload
+  // detects as claude, whose hook dir is absent in opencode-only installs),
+  // then the SSOT core dir as the last resort.
+  const filterScript = [
+    getHookDir(vendor),
+    join(".opencode", "plugins", "oma"),
+    join(".agents", "hooks", "core"),
+  ]
+    .map((dir) => join(projectDir, dir, "filter-test-output.sh"))
+    .find((p) => existsSync(p));
+  if (!filterScript) return null;
+
+  // The original command sits on its own lines inside the subshell: a
+  // trailing `# comment` would otherwise swallow the closing paren, and a
+  // heredoc's terminator must stay alone on its line (`EOF)` never matches).
+  const filteredCmd = `set -o pipefail; (\n${command}\n) 2>&1 | bash "${filterScript}"`;
+  const updatedInput: Record<string, unknown> = {
+    ...toolInput,
+    command: filteredCmd,
+  };
+
+  return { type: "mutate", updatedInput };
 }
 
-const command = input.tool_input?.command;
-if (!command) process.exit(0);
+// ── Standalone entry (pi subprocess / direct bun invocation) ──
 
-// Check if this is a test command
-const isTestCommand = TEST_PATTERNS.some((p) => p.test(command));
-if (!isTestCommand) process.exit(0);
+function main() {
+  // Use fd 0 (sync) instead of Bun.stdin.text() — works under both Bun and
+  // Node, and avoids stdin-buffering timing differences between hosts.
+  // Fallback: when OMA_HOOK_INPUT_FILE is set, read from that file. This
+  // makes the hook testable from environments (vitest worker pools under
+  // bun) where piping stdin to a child process is unreliable.
+  const inputFile = process.env.OMA_HOOK_INPUT_FILE;
+  const raw = inputFile
+    ? readFileSync(inputFile, "utf-8")
+    : readFileSync(0, "utf-8");
+  if (!raw.trim()) process.exit(0);
 
-// Skip if it's a non-test use of test tool names (install, cat, etc.)
-const isExcluded = EXCLUDE_PATTERNS.some((p) => p.test(command));
-if (isExcluded) process.exit(0);
+  const parsed: PreToolUseInput = JSON.parse(raw);
 
-// Detect vendor and resolve project dir
-const vendor = detectVendor(input);
-const projectDir = getProjectDir(vendor, input);
-const filterScript = join(projectDir, getHookDir(vendor), "filter-test-output.sh");
+  const vendor = detectVendorFromInput(parsed, "tool", import.meta.filename);
+  const projectDir = getProjectDir(vendor, parsed);
 
-// Skip filtering if the script doesn't exist (hooks not fully installed)
-if (!existsSync(filterScript)) process.exit(0);
+  // Build canonical HookInput and delegate to run() — single logic source.
+  const toolInput: Record<string, unknown> = {
+    ...(parsed.tool_input ?? {}),
+  };
+  const hookInput: HookInput = {
+    kind: "pre_tool",
+    toolName: parsed.tool_name,
+    toolInput,
+    cwd: projectDir,
+  };
+  const ctx: HandlerCtx = { vendor, cwd: projectDir };
 
-// Rewrite command to pipe through filter
-const filteredCmd = `set -o pipefail; (${command}) 2>&1 | bash "${filterScript}"`;
+  run(hookInput, ctx)
+    .then((result) => {
+      if (result && result.type === "mutate") {
+        console.log(makePreToolOutput(vendor, result.updatedInput));
+      }
+      process.exit(0);
+    })
+    .catch(() => process.exit(0));
+}
 
-// Return updated input with all original fields preserved
-const updatedInput: Record<string, unknown> = {
-  ...input.tool_input,
-  command: filteredCmd,
-};
-
-console.log(makePreToolOutput(vendor, updatedInput));
+if (import.meta.main) {
+  main();
+}
