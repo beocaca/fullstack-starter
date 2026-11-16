@@ -1,7 +1,7 @@
 # Debug Agent - Error Recovery Playbook
 
 When you encounter a failure during debugging, follow these recovery steps.
-Do NOT stop or ask for help until you have exhausted the playbook.
+Use the relevant recovery steps. If required information or authority is missing, pause the dependent action and continue independent work.
 
 ---
 
@@ -9,11 +9,11 @@ Do NOT stop or ask for help until you have exhausted the playbook.
 
 **Symptoms**: Bug described by user but you can't trigger it
 
-1. Re-read user's reproduction steps — are you following them exactly?
+1. Re-read user's reproduction steps; are you following them exactly?
 2. Check environment differences: browser, OS, node/python version
 3. Check data-dependent: does it need specific DB state or test data?
 4. Check timing: is it a race condition? Try adding delays or rapid repetition
-5. **After 3 attempts**: Record `Status: cannot_reproduce` in result with condition list
+5. If it still does not reproduce after those variations, report `partial` (or `blocked` when nothing else can proceed) and list the conditions tried in `unresolved`
    - NEVER give up immediately saying "cannot reproduce"
 
 ---
@@ -22,9 +22,9 @@ Do NOT stop or ask for help until you have exhausted the playbook.
 
 **Symptoms**: Original bug fixed but other tests break
 
-1. Read the failing tests — are they testing the old (buggy) behavior?
+1. Read the failing tests; are they testing the old (buggy) behavior?
 2. If yes: update tests to reflect correct behavior
-3. If no: your fix has side effects — revert and try a more targeted approach
+3. If no: your fix has side effects. Revert and try a more targeted approach
 4. `find_referencing_symbols("fixedFunction")` to check all callers
 5. Consider: is the function contract changing? If so, update all callers
 
@@ -37,9 +37,9 @@ Do NOT stop or ask for help until you have exhausted the playbook.
 1. Add logging at each step of the execution path
 2. Binary search: is the bug before or after the midpoint?
 3. `search_for_pattern("suspicious_pattern")` to find related code
-4. Check git history: `git log --oneline -20 -- path/to/file` — when was it last changed?
+4. Check git history: `git log --oneline -20 -- path/to/file`. When was it last changed?
 5. Check: is it a dependency issue? Library version mismatch?
-6. **No progress after 5 turns**: Record current analysis in progress, switch to different hypothesis
+6. If a hypothesis keeps failing to explain the evidence, record the current analysis in progress and switch to a different hypothesis
 
 ---
 
@@ -52,8 +52,8 @@ Do NOT stop or ask for help until you have exhausted the playbook.
    - Which endpoint/component is wrong
    - What the correct behavior should be
    - Evidence (request/response logs, stack trace)
-3. Record in result: `cross_domain_issue: {agent: "backend", description: "..."}`
-4. **Do NOT modify directly** — touching another agent's code causes conflicts
+3. In an orchestrated run where another agent owns that code, do not modify it: name the owning skill and the issue in `unresolved` so the coordinator can route it
+4. In a standalone run, fix the root cause where it lives, within the requested scope
 
 ---
 
@@ -65,7 +65,7 @@ Do NOT stop or ask for help until you have exhausted the playbook.
 2. Backend: enable SQL query logging, count queries, check `EXPLAIN ANALYZE`
 3. Frontend: run Lighthouse, check React DevTools Profiler
 4. Mobile: use Flutter DevTools performance tab
-5. Profile before fixing — never optimize without data
+5. Profile before fixing; never optimize without data
 
 ---
 
@@ -77,18 +77,18 @@ Do NOT stop or ask for help until you have exhausted the playbook.
 2. Try: integration test instead of unit test
 3. If truly untestable: document the manual reproduction steps
 4. Add a comment in code explaining why the fix is correct
-5. Note in result: `test_limitation: "reason why automated test is not feasible"`
+5. State in `unresolved` why an automated test is not feasible
 
 ---
 
 ## Rate Limit / Quota / Memory Fallback
 
-Same as backend-agent playbook: See relevant sections.
+Same as the backend playbook: see `../../oma-backend/resources/error-playbook.md` §"Rate Limit / Quota Error (LLM runtime)" and §"Workflow State Unavailable".
 
 ---
 
 ## General Principles
 
 - **After 3 failures**: If same approach fails 3 times, must try a different method
-- **Blocked**: If no progress after 5 turns, save current state, `Status: blocked`
-- **Out of scope**: Other agent's domain — only record, do not modify directly
+- **Blocked**: If a missing fact or a repeated failure stops progress, save current state and report `blocked` with the cause in `unresolved`
+- **Another owner's code**: In an orchestrated run with assigned ownership, record the issue for its owner instead of modifying it

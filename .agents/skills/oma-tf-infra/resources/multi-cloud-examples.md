@@ -29,10 +29,11 @@ resource "aws_ecs_service" "api" {
 
 ### OIDC for GitHub Actions
 ```hcl
+# `thumbprint_list` is optional: AWS validates GitHub's OIDC IdP against its
+# trusted root CA library.
 resource "aws_iam_openid_connect_provider" "github" {
-  url = "https://token.actions.githubusercontent.com"
+  url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4e98bab03faadb97b34396831e3780aea1"]
 }
 
 resource "aws_iam_role" "github_actions" {
@@ -111,6 +112,9 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository" = "assertion.repository"
   }
 
+  # GitHub has a shared issuer: restrict tokens to your organization/repository.
+  # Prefer immutable numeric owner/repository IDs when configured by the project.
+  attribute_condition = "assertion.repository_owner == '${var.github_org}' && assertion.repository == '${var.github_repo}'"
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
@@ -135,6 +139,13 @@ resource "azurerm_container_app" "api" {
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
 
+  # Key Vault reference: the secret value never appears in HCL or state.
+  secret {
+    name                = "database-url"
+    key_vault_secret_id = azurerm_key_vault_secret.database_url.versionless_id
+    identity            = azurerm_user_assigned_identity.api.id
+  }
+
   template {
     min_replicas = var.api_min_instances
     max_replicas = var.api_max_instances
@@ -146,8 +157,8 @@ resource "azurerm_container_app" "api" {
       memory = "2Gi"
 
       env {
-        name  = "DATABASE_URL"
-        value = "postgresql://..."
+        name        = "DATABASE_URL"
+        secret_name = "database-url"
       }
     }
   }
@@ -156,13 +167,15 @@ resource "azurerm_container_app" "api" {
 
 ### Federated Credentials
 ```hcl
+# azuread provider >= 3.0: `application_object_id` was removed; use the
+# application's resource ID via `application_id`.
 resource "azuread_application_federated_identity_credential" "github" {
-  application_object_id = azuread_application.github.object_id
-  display_name          = "github-actions"
-  description           = "GitHub Actions OIDC"
-  audiences             = ["api://AzureADTokenExchange"]
-  issuer                = "https://token.actions.githubusercontent.com"
-  subject               = "repo:${var.github_repo}:ref:refs/heads/main"
+  application_id = azuread_application.github.id
+  display_name   = "github-actions"
+  description    = "GitHub Actions OIDC"
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://token.actions.githubusercontent.com"
+  subject        = "repo:${var.github_repo}:ref:refs/heads/main"
 }
 ```
 
@@ -183,11 +196,14 @@ resource "oci_container_instances_container_instance" "api" {
   display_name   = "${local.prefix}-api"
   
   containers {
-    image_url = "${oci_artifacts_container_repository.api.repository_url}:${var.image_tag}"
+    image_url = "ocir.${var.region}.oci.oraclecloud.com/${oci_artifacts_container_repository.api.namespace}/${oci_artifacts_container_repository.api.display_name}:${var.image_tag}"
     display_name = "api"
     
+    # Non-secret configuration only: these values are stored in state and
+    # readable on the instance. The workload fetches the credential from OCI
+    # Vault at startup through its resource principal.
     environment_variables = {
-      "DATABASE_URL" = "postgresql://..."
+      "DATABASE_SECRET_OCID" = oci_vault_secret.db_password.id
     }
   }
 }
@@ -199,3 +215,31 @@ data "oci_secrets_secretbundle" "db_password" {
   secret_id = oci_vault_secret.db_password.id
 }
 ```
+
+## Secrets and Terraform State
+
+The secret data-source reads above keep credentials out of `.tf` files, but the
+fetched values still persist in plaintext in the plan artifact and state file.
+Always treat state as sensitive (encrypted backend, restricted access), and on
+newer Terraform prefer patterns that never touch state:
+
+- **Terraform >= 1.10**: `ephemeral` resources/variables — read secrets without
+  persisting them to plan or state.
+- **Terraform >= 1.11**: write-only arguments (`*_wo` + `*_wo_version`) — pass
+  secrets into managed resources without storing them in state.
+
+```hcl
+# Terraform >= 1.11 example: password never lands in state
+ephemeral "aws_secretsmanager_secret_version" "db_password" {
+  secret_id = "${local.prefix}/db-password"
+}
+
+resource "aws_db_instance" "main" {
+  # ...
+  password_wo         = ephemeral.aws_secretsmanager_secret_version.db_password.secret_string
+  password_wo_version = 1 # bump to rotate
+}
+```
+
+Provider support for write-only arguments varies by resource; fall back to the
+data-source pattern plus state hygiene when unavailable.
