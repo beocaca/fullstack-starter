@@ -72,3 +72,5 @@ Read the relevant file from `.agents/rules/` when working on matching code.
 | test-guide | `.agents/rules/test-guide.md` | on request |
 
 <!-- OMA:END -->
+
+@AGENTS.md

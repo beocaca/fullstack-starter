@@ -1,97 +1,139 @@
 ---
 name: oma-backend
-description: Backend specialist for APIs, databases, authentication with clean architecture (Repository/Service/Router pattern). Use for API, endpoint, REST, database, server, migration, and auth work.
+description: "Implement server APIs, authentication, and application data access. Schema modeling and query tuning use oma-db."
 ---
 
 # Backend Agent - API & Server Specialist
 
-## When to use
+## Scheduling
+
+### Goal
+Implement or review backend APIs, authentication, database integration, server-side business logic, and migrations using the project's existing backend stack and clean architecture boundaries.
+
+### Intent signature
+- User asks for API, endpoint, REST, GraphQL, auth, server, migration, repository, service, router, or background job work.
+- User needs backend code that coordinates validation, business logic, persistence, transactions, and backing services.
+
+### When to use
 - Building REST APIs or GraphQL endpoints
-- Database design and migrations
+- Data access code and migrations that an API change needs
 - Authentication and authorization
 - Server-side business logic
 - Background jobs and queues
 
-## When NOT to use
+### When NOT to use
 - Frontend UI -> use Frontend Agent
 - Mobile-specific code -> use Mobile Agent
+- Schema modeling, index design, and query tuning -> use `oma-db`
 
-## Core Principles
+### Expected inputs
+- Target feature, endpoint, migration, auth flow, or server behavior
+- Existing backend stack files such as manifests, routes, services, models, and database config
+- API contracts, schemas, validation rules, and persistence requirements
+- Required verification commands or project conventions
 
-1. **DRY (Don't Repeat Yourself)**: Business logic in `Service`, data access logic in `Repository`
-2. **SOLID**:
-   - **Single Responsibility**: Classes and functions should have one responsibility
-   - **Dependency Inversion**: Use your framework's DI mechanism
-3. **KISS**: Keep it simple and clear
+### Expected outputs
+- Backend code changes in router, service, repository, model, migration, or test files
+- Validated inputs, safe queries, transaction boundaries, and error handling
+- Verification status: which checks ran, and what was not verified
 
-## Architecture Pattern
+### Dependencies
+- Project stack manifests and existing backend conventions
+- `resources/execution-protocol.md`, `resources/checklist.md`, and `resources/orm-reference.md`
+<!-- oma-docs:ignore-start -->
+- Optional stack reference (`stack/`, or the matching `variants/<language>/`): `stack.yaml`, `tech-stack.md`, snippets, and API templates
+<!-- oma-docs:ignore-end -->
+- The project's own toolchain: ORM or database client, and its test, lint, typecheck, and migration commands
+- Database, queue, cache, mail, auth, or external API resources configured through environment or secret managers
+
+## Structural Flow
+
+### Transitions
+- If stack files exist, follow them before generic guidance.
+- If ORM performance, relationship loading, transactions, or N+1 risk appears, use `resources/orm-reference.md`.
+- If database schema impact is primary and API work is secondary, coordinate with `oma-db`.
+- If auth server setup touches DB adapters or server libraries, keep it in backend scope.
+
+### Failure and recovery
+- If stack cannot be determined, ask the user or suggest running `/stack-set`.
+- If a required check fails, fix the root cause before handoff.
+- If required secrets or services are unavailable, document the blocker and keep code configurable.
+
+### Exit
+- Success: backend change is implemented, covered by tests, and aligned with local architecture.
+- Partial success: blocker, missing dependency, or verification gap is explicit.
+
+## Logical Operations
+
+### Canonical workflow path
+1. Detect the stack (see Stack Detection) and identify the affected router, service, repository, model, migration, and test boundaries.
+2. Locate files and inspect symbols or content with the configured code-intelligence provider. For Serena, use `find_file`, `search_for_pattern`, `get_symbols_overview`, and `find_symbol`. Native search is limited to the provider exclusions and non-code paths permitted by the project's search policy.
+3. Read the existing routes, services, repositories, models, schemas, and config. Load a stack-specific reference only when the task needs it.
+4. Implement the change with validation, business logic, persistence, and tests, following the Core Rules.
+<!-- oma-docs:ignore-start -->
+5. Select the project's verification commands (lint, typecheck, tests, and migrations when schema changes are involved), preferring the `verify:` commands in `stack/stack.yaml` when present. Run them only when the user or the active workflow requires it; otherwise report what was not verified.
+<!-- oma-docs:ignore-end -->
+6. Review the applicable checklist items and report the changed behavior, the verification status, and unresolved risks.
+
+### Resource scope and effects
+Reads and edits backend source, tests, schemas, and migrations. A change may alter the database schema, API or auth behavior, or a service contract, and may require regenerated clients or migration artifacts. Credentials (DB URLs, API keys, secrets) stay in the environment or a secret manager; external APIs and backing services are called only when the task requires them.
+
+### Guardrails
+Apply framework, library, architecture, and data-model defaults only when the target project has no established choice. Scoped edits do not authorize a stack migration or unrelated infrastructure.
+
+### Architecture Pattern
 
 ```
 Router (HTTP) → Service (Business Logic) → Repository (Data Access) → Models
 ```
 
-### Repository Layer
-- Encapsulate DB CRUD and query logic
-- No business logic, return ORM entities
+- **Router**: receives HTTP requests, validates input, calls the Service (injected through the framework's DI), and returns the response
+- **Service**: owns business decisions, Repository composition, and external API calls
+- **Repository**: encapsulates DB CRUD and query logic and returns ORM entities
 
-### Service Layer
-- Business logic, Repository composition, external API calls
-- Business decisions only here
-
-### Router Layer
-- Receive HTTP requests, input validation, call Service, return response
-- No business logic, inject Service via DI
-
-## Core Rules
+### Core Rules
 
 1. **Clean architecture**: router → service → repository → models
 2. **No business logic in route handlers**
 3. **All inputs validated** with your stack's validation library
 4. **Parameterized queries only** (never string interpolation)
-5. **JWT + bcrypt for auth**; rate limit auth endpoints
+5. **JWT + Argon2id for auth** (bcrypt acceptable for legacy compatibility); rate limit auth endpoints
 6. **Async where supported**; type annotations on all signatures
 7. **Custom exceptions** via centralized error module (not raw HTTP exceptions)
 8. **Explicit ORM loading strategy**: do not rely on default relation loading when query shape matters
 9. **Explicit transaction boundaries**: group one business operation into one request/service-scoped unit of work
 10. **Safe ORM lifecycle**: do not share mutable ORM session/entity manager/client objects across concurrent work unless the ORM explicitly supports it
-11. **Config from environment**: DB URLs, API keys, secrets, and feature flags come from env vars or secret managers — never hardcode in source
-12. **Stateless services**: no in-memory session or user state between requests — use external stores (DB, Redis, cache) for shared state
-13. **Backing services as resources**: DB, queue, cache, mail are swappable attached resources connected via config — Repository layer must not assume a specific instance
+11. **Config from the environment; a fallback is declared, never implied**: DB URLs, API keys, secrets, and feature flags come from environment variables or a secret manager, never from source. A missing credential fails with a clear error by default. A deterministic local fallback is written only when the integration is declared key-optional (a key provisioned later, a demo from a clean checkout) or a test/demo mode is explicitly selected: keep the real call and the fallback as separate env-conditional branches, mark the fallback `// TODO(oma-deferred): integrate <vendor> when key is provisioned`, and label its output as simulated. A simulated payment, authentication, mail, or other effect is never reported as a completed real operation, and shipping only the fallback leaves the spec unmet.
+12. **Stateless services**: no in-memory session or user state between requests; use external stores (DB, Redis, cache) for shared state
+13. **Backing services as resources**: DB, queue, cache, mail are swappable attached resources connected via config; Repository layer must not assume a specific instance
 
-## Stack Detection (Priority Order)
+### Stack Detection
 
-1. **Project files first** — Read existing code, package manifests (pyproject.toml, package.json, Cargo.toml, go.mod, pom.xml, etc.) to determine the tech stack
-2. **stack/ second** — If `stack/` exists, use it as supplementary reference for coding conventions and snippet templates
-3. **Neither exists** — Ask the user or suggest running `/stack-set`
+1. **Project files first**: Read existing code, package manifests (pyproject.toml, package.json, Cargo.toml, go.mod, pom.xml, etc.) to determine the tech stack
+2. **Stack reference second**: Use `stack/` when present; otherwise the matching `variants/<language>/`. An installed project with a chosen preset has `stack/` and no `variants/`; the plugin and source layouts have `variants/` and no `stack/`. Treat it as supplementary reference for coding conventions and snippet templates
+3. **Neither applies**: Ask the user or suggest running `/stack-set`
 
-## Stack-Specific Reference
+### Stack-Specific Reference
 
-- Tech stack & libraries: `stack/tech-stack.md`
-- Code snippets (copy-paste ready): `stack/snippets.md`
-- API template: `stack/api-template.*`
-- Stack config: `stack/stack.yaml`
+File names are relative to the stack reference directory selected above.
 
-## How to Execute
-
-Follow `resources/execution-protocol.md` step by step.
-See `resources/examples.md` for input/output examples.
-Use `resources/orm-reference.md` when the task involves ORM query performance, relationship loading, transactions, session/client lifecycle, or N+1 analysis.
-Before submitting, run `resources/checklist.md`.
-
-## Execution Protocol (CLI Mode)
-
-Vendor-specific execution protocols are injected automatically by `oma agent:spawn`.
-Source files live under `../_shared/runtime/execution-protocols/{vendor}.md`.
+<!-- oma-docs:ignore-start -->
+- **Stack manifest (SSOT)**: `stack.yaml`: structured declaration (`language`, `framework`, `orm`) and the `verify:` contract. `oma verify agent backend` runs the `verify:` block of `stack/stack.yaml`. The manifest's JSON Schema is `variants/stack.schema.json` in the plugin and source layouts; an installed project does not carry it.
+- Tech stack narrative: `tech-stack.md`: human-readable reference only; `stack.yaml` wins on conflict.
+- Code snippets (copy-paste ready): `snippets.md`
+- API template: `api-template.*`
+<!-- oma-docs:ignore-end -->
 
 ## References
+- Stack generation spec: `resources/stack-generation.md` (loaded by `/stack-set` when it generates this skill's `stack/`)
+- Local code tools: `../_shared/core/code-intelligence.md` (code search/navigation)
 
-- Execution steps: `resources/execution-protocol.md`
-- Code examples: `resources/examples.md`
-- Checklist: `resources/checklist.md`
+- Execution steps (follow for the selected task): `resources/execution-protocol.md`
+- Checklist (check the applicable items before handoff): `resources/checklist.md`
 - ORM reference: `resources/orm-reference.md`
 - Error recovery: `resources/error-playbook.md`
 - Context loading: `../_shared/core/context-loading.md`
-- Reasoning templates: `../_shared/core/reasoning-templates.md`
 - Clarification: `../_shared/core/clarification-protocol.md`
 - Context budget: `../_shared/core/context-budget.md`
-- Lessons learned: `../_shared/core/lessons-learned.md`
+- Lessons learned: `../_shared/core/lessons-learned.md` (matching prior failure or requested retrospective)
+- Observability handoff: `../oma-observability/SKILL.md` §Integrations — propagators/baggage, span conventions, log correlation, PII redaction
