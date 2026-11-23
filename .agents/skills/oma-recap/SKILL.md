@@ -1,24 +1,95 @@
 ---
 name: oma-recap
-description: Analyze conversation histories from multiple AI tools (Claude, Codex, Gemini, Qwen, Cursor) and generate themed daily/period work summaries. Filter by date or time window.
+description: "Summarize AI conversation histories for a specified date or period. Use for daily work recaps and cross-tool activity summaries."
 ---
 
 # AI Tool Conversation History Summary
 
 Analyze AI tool conversation histories for a given period and generate themed work summaries.
 
-## When to use
+## Scheduling
+
+### Goal
+Collect AI tool conversation history for a date or window and synthesize it into a themed, project-oriented recap with saved Markdown output.
+
+### Intent signature
+- User asks for daily recap, weekly/monthly summary, standup notes, work log, tool usage pattern, or AI conversation history analysis.
+- User wants conversation histories grouped by work content rather than raw chronological logs.
+
+### When to use
 - Summarizing a day or period of work activity
 - Understanding the overall flow of work across multiple AI tools
 - Analyzing tool-switching patterns between sessions
 - Preparing daily standups, weekly retros, or work logs
 
-## When NOT to use
+### When NOT to use
 - Git commit-based code change retrospective -> use `oma retro`
-- Real-time agent monitoring -> use `oma dashboard`
-- Productivity metrics -> use `oma stats`
+- Real-time agent monitoring -> use `oma dashboard terminal`
+- Productivity metrics -> use `oma stats get`
 
-## Process
+### Expected inputs
+- Date, relative date, time window, or tool filter
+- Conversation history available through `oma recap --json` or fallback sources
+- Desired daily or multi-day recap scope
+
+### Expected outputs
+- Markdown recap saved to `.agents/results/recap/{date}.md` or range filename
+- TL;DR, overview, themes/projects, miscellaneous or side projects, and tool usage patterns
+- User-facing summary in the response language
+
+### Dependencies
+- `oma recap --json`
+- Optional Claude fallback history at `~/.claude/history.jsonl`, read with `jq` and `date`
+- `.agents/oma-config.yaml` for language behavior
+
+## Structural Flow
+
+### Transitions
+- If no date is specified, use today via `--date` (bare `--window` is a rolling window ending now, not calendar-aligned).
+- If window is 3 days or longer, group by project instead of day chronology; a shorter window uses the daily format once per calendar day.
+- If CLI is unavailable, use Claude fallback only and report scope limits.
+- If tasks are under threshold, group them into Miscellaneous or Side Projects.
+
+### Failure and recovery
+- If history is unavailable, report missing source and requested range.
+- If timestamps are ambiguous, use configured timezone and state assumption.
+- If extracted data is sparse, produce a concise recap and note limited coverage.
+
+### Exit
+- Success: recap file exists and summary is displayed.
+- Partial success: missing tools/history or fallback-only coverage is explicit.
+
+## Logical Operations
+
+### Canonical command path
+1. Resolve the requested date or window per Resolve Date; default to today.
+2. Collect normalized conversation history with the matching command. Collect Data covers the tool filter and the fallback when the CLI is not installed.
+   ```bash
+   oma recap --date YYYY-MM-DD --json
+   oma recap --window 7d --json
+   oma recap --json  # rolling last 24h, not "today"
+   ```
+3. Read all extracted records, then group and classify themes or projects per Theme Analysis and Grouping.
+4. Write the recap in the daily or multi-day template per Output Format and check it against that template.
+5. Save the recap per Save Results and display it.
+
+### Resource scope and effects
+Reads local conversation history (prompts and project activity) through `oma recap`, or `~/.claude/history.jsonl` in the fallback. Writes one recap Markdown file under `.agents/results/recap/`.
+
+### Guardrails
+
+1. **Evidence status**: A prompt alone proves a request, not a result. Mark work **completed** only with an explicit completion/result message, a receipt, or an artifact that supports the stated outcome. Mark it **in progress** with progress evidence; otherwise call it **requested**. Do not infer completion from a tool invocation or elapsed time.
+2. **TL;DR required**: Top 3 supported outcomes. Use "completed" only when the evidence-status rule permits it; otherwise summarize requested or in-progress work plainly. Project name + status/outcome. No tool names or unnecessary detail.
+3. **Overview**: After TL;DR, describe the flow. Start with "I" as subject and preserve evidence status.
+4. **Daily (windows under 3 days)**: themes by time block (15+ min), one dated block per calendar day. Rest goes to "Miscellaneous".
+5. **Multi-day (3d+)**: sections by project, ordered by activity. Read like a sprint report, not a daily log.
+6. **2-4 bullets per theme/project**: Concise essentials only. Don't enumerate every step.
+7. **Themes by content**: Group by actual work, not by tool.
+8. **Time range (daily only)**: `(AM/PM/Evening HH:MM~HH:MM)`. AM: ~12:00, PM: 12:00~18:00, Evening: 18:00~.
+9. **Response language**: the user's prompt language first, then `language` in `.agents/oma-config.yaml`, then English.
+10. **No em dashes**: Use commas, periods, or parentheses instead of `—` (em dash).
+
+### Process
 
 ### 1. Resolve Date
 
@@ -29,34 +100,38 @@ Determine the target date or window from the user's natural language input. Defa
 - Specific date mentions (month + day, or full date) → convert to `--date YYYY-MM-DD`
 - Relative weekday references (last Monday, this Friday, etc.) → calculate the date
 - Period references (this week, last 3 days, past 2 weeks, etc.) → convert to `--window Nd`
-- No date specified → today (`--window 1d`)
+- No date specified → today, resolved to `--date YYYY-MM-DD`
+- The CLI caps windows at 30 days (longer values are trimmed with a warning) — when a requested period gets capped, say so in the recap
 
 ### 2. Collect Data
 
 Extract normalized conversation history via CLI.
 
 ```bash
-# Default (today, all tools)
-oma recap --json
+# Today (calendar day, all tools); other date and window forms are in the canonical command path
+oma recap --date $(date +%F) --json
 
-# Time window
-oma recap --window 7d --json
-
-# Specific date
-oma recap --date 2026-04-10 --json
-
-# Tool filter
-oma recap --tool claude,gemini --json
+# Tool filter (supported: grok, claude, codex, gemini, qwen, cursor, antigravity)
+oma recap --tool claude,codex --json
 ```
 
-**Fallback when CLI is not installed** — process Claude history only via inline jq:
+**Fallback when CLI is not installed**: process Claude history only via inline jq. The fallback returns prompts only, so every item is **requested** unless a separate artifact or receipt supports more; state that limit in the recap.
 
 ```bash
+# Uses the system timezone; export TZ=<zone> first to override, and state the
+# timezone assumption in the recap (per the Failure and recovery rules).
 TARGET_DATE=$(date +%Y-%m-%d)
-TZ=Asia/Seoul start_ts=$(date -j -f "%Y-%m-%d %H:%M:%S" "${TARGET_DATE} 00:00:00" +%s)000
-end_ts=$((start_ts + 86400000))
+# macOS/BSD date: advance the calendar date, then parse both local midnights.
+next_date=$(date -j -v+1d -f "%Y-%m-%d %H:%M:%S" "${TARGET_DATE} 12:00:00" +%Y-%m-%d)
+start_ts=$(date -j -f "%Y-%m-%d %H:%M:%S" "${TARGET_DATE} 00:00:00" +%s)000
+end_ts=$(date -j -f "%Y-%m-%d %H:%M:%S" "${next_date} 00:00:00" +%s)000
+# Linux/GNU date alternatives (replace all three lines above):
+# next_date=$(date -d "${TARGET_DATE} 12:00:00 tomorrow" +%Y-%m-%d)
+# start_ts=$(date -d "${TARGET_DATE} 00:00:00" +%s)000
+# end_ts=$(date -d "${next_date} 00:00:00" +%s)000
+# Do not add a fixed 24 hours: DST calendar days can have 23 or 25 hours.
 
-TZ=Asia/Seoul jq -r --argjson start "$start_ts" --argjson end "$end_ts" '
+jq -r --argjson start "$start_ts" --argjson end "$end_ts" '
   select(.timestamp >= $start and .timestamp < $end and .display != null and .display != "") |
   {
     time: (.timestamp / 1000 | localtime | strftime("%H:%M")),
@@ -74,11 +149,11 @@ Read **all** extracted data and analyze with the following criteria:
 - Only classify as a separate theme if the work spans **15+ minutes** (based on timestamp gaps and prompt count)
 - Merge consecutive prompts on the same topic into one theme
 - Collect sub-15-minute tasks into a "Miscellaneous" section
-- Group by **work content**, not by tool
+- Classify each item as requested, in progress, or completed per the evidence-status guardrail
 
 **Cross-tool analysis:**
 - Track workflow when multiple tools are used in the same time window
-- Example: "Designed in Gemini -> Implemented in Claude -> Reviewed in Codex"
+- Example: "Designed in Antigravity -> Implemented in Claude -> Reviewed in Codex"
 - Derive insights from tool-switching patterns
 
 **Extract from each theme:**
@@ -89,89 +164,13 @@ Read **all** extracted data and analyze with the following criteria:
 
 ### 4. Output Format
 
-Save results to `.agents/results/recap/{date}.md` and display simultaneously.
-
-Output in the following markdown format. **Response language follows `language` setting in `.agents/oma-config.yaml`.**
-
-#### Daily format (1d or specific date)
-
-```markdown
-## {date} Recap
-
-> **TL;DR**
-> - {What I accomplished 1 — project name + outcome}
-> - {What I accomplished 2}
-> - {What I accomplished 3}
-
-### Overview
-2-3 sentence summary of the day. Written from "I did X" perspective.
-Focus on outcomes and progress, not tool ratios or technical details.
-
-### {Theme 1} (AM 09:36~11:30)
-- Core work performed
-- Key decisions
-- 2-4 bullets per theme
-
-### {Theme 2} (PM 13:33~15:21)
-- Core work performed
-- Key decisions
-
-### Miscellaneous
-- Brief summary of sub-15-minute tasks
-
-### Tool Usage Patterns
-- Tool usage ratios and primary purposes
-- Notable tool-switching patterns
-```
-
-#### Multi-day format (3d, 7d, 2w, 30d)
-
-For any multi-day window, use a **project-driven structure** like a sprint report.
-Focus on what was accomplished per project, not day-by-day chronology.
-
-```markdown
-## {start} ~ {end} Monthly Recap
-
-> **TL;DR**
-> - {What I accomplished 1 — project name + outcome}
-> - {What I accomplished 2}
-> - {What I accomplished 3}
-
-### Overview
-3-5 sentence narrative of the month. Major focus shifts week-by-week,
-key milestones achieved, and overall direction. Written from "I did X" perspective.
-
-### {Project A}
-What this project is, what was accomplished during the period.
-- Key milestone or deliverable 1
-- Key milestone or deliverable 2
-- Key decision made
-- Current status (shipped / in progress / blocked)
-
-### {Project B}
-- ...
-
-### Side Projects
-Projects with <30 prompts, summarized briefly.
-- {project}: one-line summary
-- {project}: one-line summary
-
-### Tool Usage Patterns
-- Tool usage ratios and how they evolved over the month
-- Notable shifts (e.g., "started using Codex mid-month")
-```
-
-**Multi-day grouping rules:**
-- Group by **project**, not by date
-- Order projects by activity volume (most active first)
-- Each project section: what it is, what was accomplished, key decisions, current status
-- Do NOT include prompt counts or date ranges in project headers — those are internal metrics
-- Small projects (<30 prompts) go into "Side Projects" as one-liners
-- Overview should read like a sprint report narrative, not a log
+Use the markdown templates in `resources/output-formats.md`: the daily format
+for a single date or a window under 3 days, the multi-day format with its
+grouping rules for 3 days or longer.
 
 ### 5. Save Results
 
-Save to `.agents/results/recap/{date}.md`.
+Save to `.agents/results/recap/{date}.md` and display the recap as well.
 For window ranges, use `{start-date}~{end-date}.md` format.
 
 ```bash
@@ -180,15 +179,9 @@ For window ranges, use `{start-date}~{end-date}.md` format.
 .agents/results/recap/2026-04-06~2026-04-12.md
 ```
 
-## Core Rules
+## References
 
-1. **TL;DR required**: Top 3 lines of "what I accomplished". Project name + outcome. No tool names or technical details.
-2. **Overview**: After TL;DR, describe the flow. Start with "I" as subject.
-3. **Daily**: themes by time block (15+ min). Rest goes to "Miscellaneous".
-4. **Multi-day (3d+)**: sections by project, ordered by activity. Read like a sprint report, not a daily log.
-5. **2-4 bullets per theme/project**: Concise essentials only. Don't enumerate every step.
-6. **Themes by content**: Group by actual work, not by tool.
-7. **Time range (daily only)**: `(AM/PM/Evening HH:MM~HH:MM)`. AM: ~12:00, PM: 12:00~18:00, Evening: 18:00~.
-8. **Save results**: Write markdown to `.agents/results/recap/`.
-9. **Response language**: Follows `language` setting in `.agents/oma-config.yaml` if configured.
-10. **No em dashes**: Use commas, periods, or parentheses instead of `—` (em dash).
+- Output format templates: `resources/output-formats.md`
+- Recap CLI: `oma recap --json`
+- Language config: `.agents/oma-config.yaml`
+- Claude fallback history: `~/.claude/history.jsonl`
