@@ -1,132 +1,135 @@
 ---
 name: oma-design
-description: >
-  AI design specialist skill with DESIGN.md management, anti-pattern enforcement,
-  optional Stitch MCP integration, and component library guidance.
-  Covers typography, color systems, motion design (motion/react, GSAP, Three.js),
-  responsive-first layouts, and accessibility (WCAG 2.2).
+description: Define or review a visual system, DESIGN.md, or redesign direction.
+  Use for typography, layout, color, motion, and interaction design decisions.
 ---
 
 # oma-design
 
-## Role
-Design specialist that defines, creates, and validates project design systems.
-DESIGN.md is the central artifact — all design work revolves around it.
+## Scheduling
 
-## Core Rules
-1. Check `.design-context.md` before any design work. If missing, run Phase 1 (Setup) to create it.
-2. System font stack as default (`system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`). Add custom fonts only with project justification.
-3. If the service supports CJK languages (ko/ja/zh): prioritize CJK-ready fonts (Pretendard Variable > Noto Sans CJK > system-ui fallback). If latin-only: choose fonts appropriate for the target audience.
-4. Enforce anti-patterns strictly — reject AI slop. See `resources/anti-patterns.md`.
-5. Name colors semantically with hex values: "Deep Ocean Navy (#1a2332)" not "dark blue".
-6. Recommend components with install commands (shadcn CLI).
-7. ALL output must be responsive-first (mobile layout as default, enhance upward).
-8. WCAG AA minimum for all designs. Respect `prefers-reduced-motion`.
-9. Stitch MCP is optional — all phases work without it.
-10. Present 2-3 design directions and get user confirmation before generating.
+### Goal
+Resolve project design intent, select the applicable external design skill, and
+retain the project's visual contract and verification evidence. `DESIGN.md`
+records the design system when the task creates or materially changes it.
 
-## Anti-Pattern Quick Reference
+### Intent signature
+- Design system, `DESIGN.md`, visual direction, redesign, or UI design review.
+- Typography, color, layout, motion, accessibility, or component decisions before implementation.
 
-### Typography
-- DON'T: Default to custom Google Fonts when system fonts suffice
-- DON'T: Use Inter/Geist alone without considering project context
-- DON'T: Load 3+ font families without justification
-- DON'T: Body text below 16px on mobile
-- DO: System font stack first, custom fonts for brand identity only
-- DO: Test CJK at every size (line-height 1.7-1.8)
+### When to use
+- Define or revise a visual system or substantial design direction.
+- Review an existing UI or refine a chosen visual direction.
+- Extract design decisions from existing UI, screenshots, or supplied references.
 
-### Color & Gradient
-- DON'T: Purple-to-blue gradient backgrounds (strongest AI slop signal)
-- DON'T: Gradient orbs/blobs as hero decoration ("AI SaaS look")
-- DON'T: Gradient + glassmorphism + blur combo (triple slop)
-- DON'T: Mesh gradient backgrounds as primary visual
-- DON'T: Pure white (#fff) on pure black (#000) — too harsh
-- DO: Solid colors or subtle single-hue gradients
-- DO: Texture (noise, grain, dither) over plain gradients
-- DO: Derive gradients from brand colors with clear purpose
+### When NOT to use
+- Implement application UI or export framework-specific tokens -> `oma-frontend` or `oma-mobile`.
+- Plan product scope -> `oma-pm`; generate an image -> `oma-image`.
+- Review general correctness or security -> `oma-qa` or `oma-security`.
 
-### Layout
-- DON'T: Nested cards inside nested cards
-- DON'T: Desktop-only fixed-width layouts
-- DON'T: Hero with identical 3-metric stats layout (AI pattern)
-- DO: 8px grid, consistent section rhythm
-- DO: Responsive-first, works at 375px minimum
-- DO: Mix layout patterns (chess, grid, bento, full-bleed)
+### Expected inputs
+- Requested surface and outcome, existing brand and project facts, and change scope.
+- Available `DESIGN.md`, `.design-context.md`, UI, screenshots, and references.
+- Platform, incumbent stack, content languages, accessibility, and responsive constraints.
 
-### Motion
-- DON'T: Bounce easing on everything
-- DON'T: Animation duration > 800ms for UI transitions
-- DON'T: Ignore prefers-reduced-motion
-- DO: transform + opacity only for 60fps
-- DO: 150ms micro-interactions, 200-500ms transitions
+### Expected outputs
+- Requested design decision, findings, or implementation handoff with observed evidence.
+- Selected supplier, operation, resolved source, and capability or verification limits.
 
-### Components
-- DON'T: Glassmorphism everywhere — use sparingly
-- DON'T: Hover-only interactions without touch/keyboard alternatives
-- DO: shadcn/ui for base, Aceternity UI / React Bits for accent effects
-- DO: All interactive elements must have visible focus states
-
-## Workflow Summary
-7 phases: Setup → Extract → Enhance → Propose → Generate → Audit → Handoff.
-See `resources/execution-protocol.md` for full detail.
-
-## Vendor Inspiration (getdesign)
-
-Phase 2 can optionally seed from the community
-[getdesign](https://getdesign.md) catalog
-([VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md),
-MIT). Trigger it by listing a supported vendor domain in the
-`## Reference Sites` section of your `.design-context.md`:
-
-```markdown
-## Reference Sites
-- [linear.app](https://linear.app) — clean dark UI, minimal, professional
-- [stripe.com](https://stripe.com) — strong hierarchy, purposeful animation
+```yaml
+outputs:
+  - name: design-doc
+    description: Updated visual contract when the design system materially changes
+    artifact: "DESIGN.md"
+    required: false
+  - name: design-context
+    description: Existing context refreshed after substantive discovery
+    artifact: ".design-context.md"
+    required: false
 ```
 
-Any domain that matches a brand in the getdesign manifest triggers an
-automatic fetch + hash-verify + load during Phase 2. No new fields, no
-extra config. Full vendor list: see `bunx getdesign@latest list`
-(telemetry is always disabled by oma-design).
+### Dependencies
+- Interface Design, Taste, or Impeccable, selected through `resources/external-design-skills.md`.
+- Project design artifacts and relevant local resources; Stitch and getdesign are optional inputs.
+- The implementation specialist's existing stack and validation tools.
 
-**Seed, not final.** oma-design treats vendor templates as inspiration
-and synthesizes a project-specific DESIGN.md around them. Importantly:
-- **Typography is never adopted from the seed.** Rule #2 (system font
-  stack default) and Rule #3 (Pretendard Variable / Noto Sans CJK for
-  ko/ja/zh) always win over the vendor's latin-only fonts.
-- **Anti-patterns are pre-audited** before synthesis. If a vendor uses
-  heavy glassmorphism or purple gradients, Phase 4 will surface the
-  choice explicitly rather than copy the pattern silently.
-- **Offline is fine.** If the fetch fails, you get a 3-option dialog
-  (retry / continue without seed / abort). Default: continue.
+## Structural Flow
 
-Attribution is appended to the generated `DESIGN.md` in Phase 7 as a
-required MIT compliance footer. Full fetcher rules, matching algorithm,
-injection defenses, and multi-vendor merge policy live in
-`resources/getdesign-fetcher.md`.
+### Transitions
+- A scoped correction reuses the affected UI and tokens; a discovery document is unnecessary.
+- For existing products, establish Preserve or Overhaul from the brief and current system.
+- For a post-implementation hierarchy, density, consistency, or craft review of an admin console, dashboard, SaaS product UI, or internal tool, select Interface Design `design-review` through `resources/product-interface-review.md`. The frontend recommendation is advisory unless the task explicitly requires design approval.
+- For other existing-UI critique, accessibility or technical audit, polish, or system extraction, select the matching Impeccable operation.
+- For dashboards, admin panels, SaaS product UI, or internal tools needing visual direction, select Interface Design.
+- When the surface is built around a data table or grid, pass `resources/data-grid.md` to the selected supplier with the brief.
+- For other new web art direction or an authorized visual overhaul, select Taste.
+- A documentation-only or token-contract task can remain local when no new visual judgment is needed.
+- Load one supplier for the current operation. A later operation may select another using the same project context.
+- A chosen GPU effect, cinematic video-scroll scene, or GSAP behavior adds the matching frontend implementation extension; it does not select another visual-direction supplier.
 
-## Resources
-- `resources/execution-protocol.md` — 7-phase workflow
-- `resources/anti-patterns.md` — Full DO/DON'T catalog
-- `resources/checklist.md` — Audit checklist (Responsive + WCAG + Nielsen + Slop)
-- `resources/design-md-spec.md` — DESIGN.md generation guide (9 sections)
-- `resources/design-tokens.md` — CSS/Tailwind/shadcn export templates
-- `resources/prompt-enhancement.md` — Vague request → detailed spec
-- `resources/stitch-integration.md` — Stitch MCP tool mapping (optional)
-- `resources/getdesign-fetcher.md` — Vendor seed fetch, hash verify, seed rules
-- `resources/error-playbook.md` — Design error recovery
+### Failure and recovery
+| Failure | Recovery |
+|---|---|
+| Missing or incomplete external bundle | Resolve the catalog entry or use the bounded upstream loading path; retain its complete support directory. |
+| Supplier changes the stack, brand, or task scope | Restore the project constraints and choose the applicable operation; implementation remains with the owning specialist. |
+| A supplier gate needs an unavailable runtime or unauthorized build | Report the gate as unrun; do not replace it with a claimed pass. |
+| Explicitly requested supplier is unavailable | Report the failed route and missing capability; do not silently substitute a different supplier. |
+| Missing context changes the design decision | Reuse existing artifacts and the brief; ask only about the material unresolved choice. |
+
+### Exit
+The requested decision or artifact is ready for the next action, with the selected
+route, project constraints, observed checks, and unresolved limits recorded.
+
+## Logical Operations
+
+### Canonical workflow path
+1. Inspect the relevant UI, design artifacts, and brief. Establish scope, platform,
+   incumbent stack, languages, brand preservation, and applicable verification.
+2. Use `resources/external-design-skills.md` to select and load the supplier for
+   this operation. Follow its relevant instructions and support files.
+3. Apply the result to the requested decision or artifact. Update `DESIGN.md`
+   only when the visual system changes; use its local specification and semantic
+   token contract. Optional Stitch/getdesign inputs remain project references.
+4. Check the affected result using `resources/checklist.md`. Hand implementation
+   to the owning frontend/mobile specialist with the route and project constraints.
+   Include a specialized frontend route when the brief calls for that capability.
+
+### Resource scope and effects
+Reads project UI and design references; may write requested design artifacts and
+load external skill bundles. Supplier installers, hooks, engine downloads,
+background processes, and paid services are separate effects, not skill loading.
+
+### Guardrails
+1. Keep existing brand, content, URLs, navigation, form contracts, analytics, and
+   legal text within the authorized scope; use the redesign preservation contract.
+2. Keep incumbent fonts when suitable. For ko/ja/zh, verify glyph coverage,
+   fallback, line breaking, and readable metrics; Latin-only references do not establish CJK support.
+3. Carry accessibility, responsive, reduced-motion, and platform requirements into
+   the selected supplier. Keep WCAG AA as the default accessibility target, or
+   the project's stricter target. Its house style does not override that contract.
+4. Use actual project assets and claims. Preserve attribution and label concepts
+   and placeholders through the asset strategy.
+5. Keep the existing implementation stack. The implementation specialist owns
+   CSS/Tailwind/component-library syntax and dependencies.
+6. Keep review-only operations read-only. Existing task authorization and the
+   shared execution policy govern builds, clarification, scope, and side effects.
+7. Keep supplier visual cookbooks upstream. OMA's shared interaction-quality
+   guidance owns its adopted motion and interaction acceptance rules; do not
+   copy an entire external method catalog into these definitions.
 
 ## References
-- `reference/visual-hierarchy.md` — 7 hierarchy principles (Alignment, Color, Contrast, Proximity, Size, Texture, Time)
-- `reference/typography.md` — Font selection, type scale, CJK
-- `reference/color-and-contrast.md` — Color psychology, WCAG contrast
-- `reference/spatial-design.md` — 8px grid, breakpoints, spacing
-- `reference/motion-design.md` — motion/react, GSAP, Three.js, ogl, Temporal UX
-- `reference/responsive-design.md` — Mobile-first, theme system
-- `reference/component-patterns.md` — shadcn/Aceternity/React Bits catalog
-- `reference/accessibility.md` — WCAG 2.2, ARIA, focus, reduced-motion
-- `reference/shader-and-3d.md` — WebGL, R3F, ogl, performance
-
-## Examples
-- `examples/design-context-example.md` — .design-context.md example
-- `examples/landing-page-prompt.md` — Detailed landing page prompt
+- `resources/product-interface-review.md`: recommended post-implementation product-interface review and frontend handoff.
+- `resources/external-design-skills.md`: supplier selection and complete-bundle loading.
+- `../oma-frontend/resources/specialized-visual-implementation.md`: chosen GPU, video-scroll, or GSAP implementation capability.
+- `../_shared/ui-interaction-quality.md`: motion intent, feedback, and interaction-quality decisions.
+- `resources/execution-protocol.md`: operation scope, artifacts, and handoff.
+- `resources/redesign-protocol.md`: preserving an existing product.
+- `resources/design-md-spec.md`: creating or materially revising DESIGN.md.
+- `resources/design-tokens.md`: semantic token handoff to implementation.
+- `resources/checklist.md`: affected-result verification and evidence.
+- `resources/data-grid.md`: alignment, filter toolbar, and row rules for data tables and grids.
+- `resources/asset-strategy.md`: actual assets, claims, provenance, and placeholders.
+- `resources/getdesign-fetcher.md`: explicitly relevant vendor inspiration.
+- `resources/stitch-integration.md`: requested Stitch operation.
+- `resources/error-playbook.md`: an observed supplier or design-tool failure.
+- `../_shared/core/execution-policy.md`: authorization, budgets, builds, and completion.
